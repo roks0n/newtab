@@ -858,6 +858,7 @@ textarea {
 
 .section-archive,
 .section-suspend,
+.section-close,
 .section-edit {
   display: grid;
   place-items: center;
@@ -874,12 +875,14 @@ textarea {
 }
 
 .section-archive,
-.section-suspend {
+.section-suspend,
+.section-close {
   opacity: 0;
 }
 
 .section-archive svg,
 .section-suspend svg,
+.section-close svg,
 .section-edit svg {
   display: block;
   width: 16px;
@@ -901,43 +904,60 @@ textarea {
   outline-offset: -1px;
 }
 
-/* A group without tabs has no archive button, and one without open tabs no
-   suspend button; keep its pencil in line with the pencils that have them. */
-.overview:has(.section-archive) .section-edit:last-child {
+/* A group's buttons sit in fixed slots: suspend, archive, close. A group
+   with no open tabs has none of them, and one whose tabs can't be saved has
+   only close; keep its pencil in line with the pencils that have them all. */
+.overview:has(.section-close) .section-edit:last-child {
   margin-right: 32px;
 }
 
-.overview:has(.section-suspend) .section-edit:last-child {
+.overview:has(.section-archive) .section-edit:last-child {
   margin-right: 64px;
+}
+
+.overview:has(.section-suspend) .section-edit:last-child {
+  margin-right: 96px;
+}
+
+.overview:has(.section-archive) .section-edit + .section-close {
+  margin-left: 32px;
+}
+
+.overview:has(.section-suspend) .section-edit + .section-close {
+  margin-left: 64px;
 }
 
 .overview:has(.section-suspend) .section-edit + .section-archive {
   margin-left: 32px;
 }
 
-.group-header-row:hover :is(.section-archive, .section-suspend),
-.group-header-row:focus-within :is(.section-archive, .section-suspend),
-.window-head:hover :is(.section-archive, .section-suspend),
-.window-head:focus-within :is(.section-archive, .section-suspend),
+.group-header-row:hover :is(.section-archive, .section-suspend, .section-close),
+.group-header-row:focus-within :is(.section-archive, .section-suspend, .section-close),
+.window-head:hover :is(.section-archive, .section-suspend, .section-close),
+.window-head:focus-within :is(.section-archive, .section-suspend, .section-close),
 .section-archive:focus-visible,
-.section-suspend:focus-visible {
+.section-suspend:focus-visible,
+.section-close:focus-visible {
   opacity: 1;
 }
 
 .section-archive:hover:not(:disabled),
-.section-suspend:hover:not(:disabled) {
+.section-suspend:hover:not(:disabled),
+.section-close:hover:not(:disabled) {
   background: var(--bg-soft);
   color: var(--text);
 }
 
 .section-archive:focus-visible,
-.section-suspend:focus-visible {
+.section-suspend:focus-visible,
+.section-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
 .section-archive:disabled,
-.section-suspend:disabled {
+.section-suspend:disabled,
+.section-close:disabled {
   cursor: default;
 }
 
@@ -1274,7 +1294,8 @@ textarea {
   .tab-close,
   .tab-menu-button,
   .section-archive,
-  .section-suspend {
+  .section-suspend,
+  .section-close {
     opacity: 0.65;
   }
 }

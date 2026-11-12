@@ -109,6 +109,9 @@ The package is written to `web-ext-artifacts/`.
   open, they are listed under **Suspended from closed windows** and reopen into
   the current window. Search and the Sorted view include them, and **Archive
   all** and a section archive take them along.
+- The × button beside a tab group or a Sorted view category closes its open
+  tabs after you confirm, without archiving or suspending them. Pinned tabs
+  stay open, and suspended tabs stay suspended.
 - **Archive all** closes every open tab and keeps it in the archive. Pinned
   tabs, private-window tabs, the overview itself, and pages that can't be
   reopened later (anything not `http:` or `https:`) stay open. A tab is closed

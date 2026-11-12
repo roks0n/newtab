@@ -141,6 +141,7 @@ const SOURCES = {
       archiveSection: promptArchive,
       suspendSection: suspendScope,
       reopenSection: reopenScope,
+      closeSection: promptClose,
     },
     // A suspended tab is listed with the open tabs but is closed in the browser.
     suspended: {
@@ -196,7 +197,7 @@ const state = {
   },
   collapsedCategories: loadSet(COLLAPSED_CATEGORIES_KEY, toStringId),
   showEmptyGroups: loadChoice(SHOW_EMPTY_GROUPS_KEY, new Set(['true']), 'false') === 'true',
-  // null | { kind: 'confirm', scope, returnFocus } | { kind: 'busy', text }
+  // null | { kind: 'confirm' | 'closeConfirm', scope, returnFocus } | { kind: 'busy', text }
   //      | { kind: 'result', text, detail, tone, batchId? }
   // scope: { kind: 'all' | 'window' | 'group' | 'category', id, name, label }
   prompt: null,
@@ -596,7 +597,7 @@ function bindSearch() {
       return;
     }
 
-    if (event.key === 'Escape' && state.prompt?.kind === 'confirm') {
+    if (event.key === 'Escape' && isConfirm(state.prompt)) {
       event.preventDefault();
       dismissPrompt();
       return;
@@ -850,6 +851,23 @@ const BANNERS = {
       ],
     };
   },
+  // Closing keeps nothing, so it asks first, like archiving does.
+  closeConfirm: (prompt) => {
+    const count = scopeTabs(prompt.scope, closable).length;
+    if (count === 0) return null;
+    const pinned = scopeTabs(prompt.scope, (tab) => !isSuspended(tab) && tab.pinned).length;
+    return {
+      text: `Close ${plural(count, 'tab')} in ${prompt.scope.name}?`,
+      detail: [
+        'They are not archived or suspended.',
+        pinned > 0 ? `${plural(pinned, 'pinned tab')} ${pinned === 1 ? 'stays' : 'stay'} open.` : '',
+      ].filter(Boolean).join(' '),
+      buttons: [
+        { id: 'close-confirm', label: 'Close tabs', primary: true, onClick: confirmClose },
+        { id: 'close-cancel', label: 'Cancel', onClick: dismissPrompt },
+      ],
+    };
+  },
   busy: (prompt) => ({ text: prompt.text, buttons: [] }),
   result: (prompt) => ({
     text: prompt.text,
@@ -882,6 +900,8 @@ function scopeWindows(windows, scope) {
 const isSuspended = (tab) => tab.suspended === true;
 const archivableCount = (tabs) => tabs.filter((tab) => !skipReason(tab)).length;
 const suspendable = (tab) => !isSuspended(tab) && !skipReason(tab);
+const closable = (tab) => !isSuspended(tab) && !tab.pinned;
+const isConfirm = (prompt) => prompt?.kind === 'confirm' || prompt?.kind === 'closeConfirm';
 const scopeTabs = (scope, include) => scopeWindows(state.windows, scope).flatMap((win) => win.tabs).filter(include);
 
 function renderBanner() {
@@ -1195,11 +1215,11 @@ function renderCategory({ meta, tabs, all }, ctx) {
 
   header.append(chevron, dot, name, count);
   header.addEventListener('click', () => toggleCategory(meta.id));
-  const { reopen, suspend, archive } = sectionActions(ctx,
+  const { reopen, suspend, archive, close } = sectionActions(ctx,
     { kind: 'category', id: meta.id, name: meta.label, label: meta.label },
     all, 'category', `[data-category-id="${CSS.escape(meta.id)}"]`);
   section.prepend(headerRow('categoryId', meta.id, header,
-    reopen, meta.custom ? editGroupButton(meta) : null, suspend, archive));
+    reopen, meta.custom ? editGroupButton(meta) : null, suspend, archive, close));
   if (editor) updateGroupEditor(editor, state.customGroups[meta.order], meta.order);
 
   if (isCollapsed) return section;
@@ -1263,6 +1283,7 @@ function sectionActions(ctx, scope, tabs, kind, scopeSelector) {
   const suspended = tabs.filter(isSuspended).length;
   const live = tabs.filter(suspendable).length;
   const archivable = archivableCount(tabs);
+  const open = tabs.filter(closable).length;
   return {
     reopen: control('reopen', actions.reopenSection, suspended,
       `Reopen ${plural(suspended, 'suspended tab')} in ${scope.name}`, { text: `Reopen ${suspended}` }),
@@ -1270,6 +1291,8 @@ function sectionActions(ctx, scope, tabs, kind, scopeSelector) {
       `Suspend ${plural(live, 'tab')} in ${scope.name}`, { icon: ICONS.suspend }),
     archive: control('archive', actions.archiveSection, archivable,
       `Archive ${plural(archivable, 'tab')} in ${scope.name}`, { icon: ICONS.archive }),
+    close: control('close', actions.closeSection, open,
+      `Close ${plural(open, 'tab')} in ${scope.name}`, { icon: ICONS.close }),
   };
 }
 
@@ -1390,10 +1413,10 @@ function renderGroup(group, ctx, allTabs) {
   header.append(chevron, dot, name, count);
   header.addEventListener('click', () => toggleGroup(ctx, group.id));
   const groupName = group.title || 'Untitled group';
-  const { reopen, suspend, archive } = sectionActions(ctx,
+  const { reopen, suspend, archive, close } = sectionActions(ctx,
     { kind: 'group', id: group.id, name: groupName, label: groupName },
     allTabs, 'group', `[data-group-id="${CSS.escape(String(group.id))}"]`);
-  section.append(headerRow('groupId', group.id, header, reopen, suspend, archive));
+  section.append(headerRow('groupId', group.id, header, reopen, suspend, archive, close));
 
   if (!isCollapsed) {
     const tabs = el('div', 'group-tabs');
@@ -1766,6 +1789,37 @@ async function forgetTab(tab) {
     console.warn('Tab Overview: could not forget suspended tab', error);
   }
   scheduleRefresh('open');
+}
+
+function promptClose(scope, returnFocus = '') {
+  if (isBusy()) return;
+  if (scopeTabs(scope, closable).length === 0) return;
+  state.prompt = { kind: 'closeConfirm', scope, returnFocus };
+  render();
+  document.getElementById('close-confirm')?.focus();
+}
+
+async function confirmClose() {
+  if (isBusy() || state.prompt?.kind !== 'closeConfirm') return;
+  const { scope, returnFocus } = state.prompt;
+  const tabs = scopeTabs(scope, closable);
+  state.prompt = { kind: 'busy', text: `Closing ${plural(tabs.length, 'tab')}…` };
+  render();
+
+  // One at a time, so a tab that closed meanwhile doesn't fail the rest.
+  const results = await Promise.allSettled(tabs.map((tab) => chrome.tabs.remove(tab.id)));
+  const failed = results.filter((result) => result.status === 'rejected').length;
+  if (failed > 0) console.warn('Tab Overview: could not close some tabs', results);
+  state.prompt = failed > 0
+    ? {
+      kind: 'result',
+      text: `Closed ${plural(tabs.length - failed, 'tab')} in ${scope.name}`,
+      detail: `${plural(failed, 'tab')} could not be closed.`,
+      tone: 'warn',
+    }
+    : null;
+  await refresh();
+  focusFirst([...(failed > 0 ? ['#banner-dismiss'] : []), returnFocus, '#search'].filter(Boolean));
 }
 
 const cardFocus = (tabId) => `[data-tab-id="${CSS.escape(String(tabId))}"] .tab-main`;
